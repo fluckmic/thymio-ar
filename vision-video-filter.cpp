@@ -187,7 +187,7 @@ cv::Mat eulerAnglesToRotationMatrix(const QVector3D& rotation) {
 }
 
 void rotateResult(TrackerResult& result, const QQuaternion& quaternion) {
-	result.pose.rotate(quaternion);
+    result.pose.rotate(quaternion);
 	auto translation(quaternion.rotatedVector(result.pose.column(3).toVector3D()));
 	result.pose.setColumn(3, QVector4D(translation, 1));
 }
@@ -211,7 +211,7 @@ struct CalibrationExpect {
 			min = std::min(min, norm);
 			std::rotate(vertices.begin(), vertices.begin() + 1, vertices.end());
 		}
-		return min < 0.2;
+        return min < 0.2;
 	}
 private:
 	static QTransform squareToQuad(QPolygonF quad) {
@@ -246,6 +246,7 @@ static const std::vector<CalibrationExpect> calibrationExpects {
 
 struct Input {
 	QVector3D rotation;
+    qint64 timestamp;
 	cv::Mat image;
 };
 
@@ -256,7 +257,8 @@ struct OutputRobot {
 
 struct OutputLandmarks {
 	QVector3D rotation = QVector3D(NaN, NaN, NaN);
-	QList<TrackerResult> results;
+    qint64 timestamp;
+    QList<TrackerResult> results;
 };
 
 
@@ -354,9 +356,10 @@ QVideoFrame VisionVideoFilterRunnable::run(QVideoFrame* inputFrame, const QVideo
 
 	auto inputReading(filter->sensor.reading());
 	if (inputReading != nullptr) {
-		input.rotation = QVector3D(inputReading->x(), inputReading->y(), inputReading->z());
-	} else {
-		input.rotation = QVector3D(NaN, NaN, NaN);
+        input.rotation = QVector3D(inputReading->x(), inputReading->y(), -inputReading->z());
+       }
+    else {
+    input.rotation = QVector3D(NaN, NaN, NaN);
 	}
 	//qWarning() << outputReading.val[0] << outputReading.val[1] << outputReading.val[2];
 
@@ -566,6 +569,7 @@ bool VisionVideoFilterRunnable::trackLandmarks() {
 
 	auto& output(outputLandmarks.writeBuffer());
 	output.rotation = input.rotation;
+    output.timestamp = input.timestamp;
 
 	output.results.clear();
 	output.results.reserve(detection.size());
@@ -606,18 +610,18 @@ void VisionVideoFilterRunnable::trackedRobot() {
 
 	auto reading(filter->sensor.reading());
 	if (reading != nullptr) {
-		auto rotation(QVector3D(reading->x(), reading->y(), reading->z()));
-		auto diff(output.rotation - rotation);
-		auto quaternion(QQuaternion::fromEulerAngles(diff));
+        auto rotation(QVector3D(reading->x(), reading->y(), reading->z()));
+        auto diff(output.rotation - rotation);
+        auto quaternion(QQuaternion::fromEulerAngles(diff));
 
-		rotateResult(filter->robot.result, quaternion);
+        rotateResult(filter->robot.result, quaternion);
 	}
 
 	emit filter->robot.changed();
 }
 
 void VisionVideoFilterRunnable::trackedLandmarks() {
-	const auto& output(outputLandmarks.readBuffer());
+    auto& output(outputLandmarks.readBuffer());
 
 	auto resultsIt(output.results.begin());
 	for (auto landmark : filter->landmarks) {
@@ -628,17 +632,32 @@ void VisionVideoFilterRunnable::trackedLandmarks() {
 
 	auto reading(filter->sensor.reading());
 	if (reading != nullptr) {
-		auto rotation(QVector3D(reading->x(), reading->y(), reading->z()));
-		auto diff(output.rotation - rotation);
-		auto quaternion(QQuaternion::fromEulerAngles(diff));
+
+        auto qRotLastFrame = QQuaternion::fromEulerAngles(output.rotation);
+        auto qRotCurrFrame = QQuaternion::fromEulerAngles(QVector3D(reading->x(), reading->y(), -reading->z()));
+
+        auto qRotLast2CurrFrame = qRotCurrFrame * qRotLastFrame.inverted();
+
+        QMatrix4x4 corr = QMatrix4x4(  0, -1,  0, 0,
+                                       1,  0,  0, 0,
+                                       0,  0, -1, 0,
+                                       0,  0,  0, 1);
+
+        // old stuff
+        // auto rotation(QVector3D(reading->x(), reading->y(), reading->z()));
+        // auto diff(output.rotation - rotation);
+        // auto quaternion(QQuaternion::fromEulerAngles(diff));
 
 		for (auto landmark : filter->landmarks) {
-			rotateResult(landmark->result, quaternion);
-		}
+            landmark->result.pose = corr * QMatrix4x4(qRotLast2CurrFrame.toRotationMatrix()) * corr.inverted() * landmark->result.pose;
+
+            // old stuff
+            // rotateResult(landmark->result, quaternion);
+        }
 	}
 
 	for (auto landmark : filter->landmarks) {
-		emit landmark->changed();
+        emit landmark->changed();
 	}
 }
 
@@ -735,7 +754,7 @@ void VisionVideoFilterRunnable::updateLens() {
 		    0, 0, near+far, near*far,
 		    0, 0, -1, 0
 		);
-		qDebug() << "camera lens:" << alpha << beta << skew << x0 << y0 << filter->lens;
+        //qDebug() << "camera lens:" << alpha << beta << skew << x0 << y0 << filter->lens;
 	}
 }
 

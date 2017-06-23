@@ -6,6 +6,7 @@
 #include <QMatrix4x4>
 #include <QQmlListProperty>
 #include <QtSensors/QRotationSensor>
+#include <QGyroscope>
 
 struct TrackerResult {
 	bool found;
@@ -53,9 +54,10 @@ class VisionVideoFilter : public QAbstractVideoFilter {
 public:
     explicit VisionVideoFilter(QObject* parent = 0);
 	QVideoFilterRunnable* createFilterRunnable();
-	QRotationSensor sensor;
+    QRotationSensor sensor;
 
-	Landmark robot;
+
+    Landmark robot;
 	QList<Landmark*> landmarks;
 	Landmark* getRobot() { return &robot; }
 	QQmlListProperty<Landmark> getLandmarks() { return QQmlListProperty<Landmark>(this, landmarks); }
