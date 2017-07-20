@@ -68,14 +68,14 @@ HEADERS += \
     $$PWD/thymio-ar.h \
 	$$PWD/vision-video-filter.h \
     $$PWD/markermodel.h \
-    $$PWD/markermodelmonitor.h
+    $$PWD/experimentfilter.h
 SOURCES += \
     $$ASEBA_SOURCES \
     $$TRACKER_SOURCES \
     $$PWD/thymio-ar.cpp \
 	$$PWD/vision-video-filter.cpp \
     $$PWD/markermodel.cpp \
-    $$PWD/markermodelmonitor.cpp
+    $$PWD/experimentfilter.cpp
 RESOURCES += $$PWD/thymio-ar.qrc
 DEPENDPATH += $$OPENCV_INCLUDE $$EIGEN_INCLUDE
 INCLUDEPATH += $$OPENCV_INCLUDE $$EIGEN_INCLUDE
