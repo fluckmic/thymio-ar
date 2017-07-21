@@ -9,6 +9,7 @@
 #include <QVector4D>
 #include <QDateTime>
 #include <QFile>
+#include <QDir>
 #include <chrono>
 #include <unordered_map>
 #include <list>
@@ -27,13 +28,15 @@ class MarkerModelMonitor;
 class MarkerModel : public QObject, public TransMem {
 
     Q_OBJECT
-    QThread monitorThread;
 
 public:
 
     MarkerModel();
 
     ~MarkerModel(){
+
+        stopMonitoring();
+
         monitorThread.quit();
         monitorThread.wait();
     }
@@ -46,6 +49,10 @@ public:
     // function to update transmem
     Q_INVOKABLE void updateLinkNow(const QString& srcFrame, const QString& destFrame, const QMatrix4x4& trans, float conf);
     Q_INVOKABLE void updateModel();
+
+    // functions to start and stop monitoring
+    Q_INVOKABLE void startMonitoring();
+    Q_INVOKABLE void stopMonitoring();
 
     // helper functions
     static qPair matrix2qPair(const QMatrix4x4& m);
@@ -74,9 +81,27 @@ private:
     const std::string orangeHouseID = "orangeHouse";
     const std::string adaHouseID = "adaHouse";
 
+    const std::string world2camID = "world2cam";
+    const std::string world2orangeHouseID = "world2orangeHouse";
+    const std::string world2adaHouseID = "world2adaHouse";
+
+    QThread monitorThread;
+
 signals:
-    void transformationUpdate(const std::string &srcFrame, const std::string &dstFrame, const Timestamp &ts,
-                              const qPair &transf, const float &conf);
+    // signals for the monitor
+    void linkUpdate(const std::string &srcFrame, const std::string &dstFrame, const Timestamp &ts,
+                    const qPair &transf, const float &conf);
+
+    void transformationUpdate(const std::string &transID, const Timestamp &ts, const QMatrix4x4 &trans,
+                              const float &avgLinkQuality, const float &avgDistanceToEntry);
+
+    void registerLinkUpdateToMonitor(const std::string &srcFrame, const std::string &destFrame);
+    void registerTransformationToMonitor(const std::string &transID);
+
+    void startMonitor();
+    void stopMonitor();
+
+    // signals for qml model
     void transformationsUpdated();
 
 protected:
@@ -102,7 +127,16 @@ struct TransformationUpdate  {
 };
 
 // basic type of an analysis
-struct Analysis{ virtual ~Analysis(){} };
+struct Analysis{
+    virtual ~Analysis(){}
+
+    Analysis(const Timestamp &tZero)
+    : tZero(tZero)
+    {}
+
+    // allows to compare different analysis
+    Timestamp tZero;
+};
 
 // basic type of an analysis result
 struct SingleAnalysisResult{ virtual QString toCSVString() = 0; };
@@ -143,27 +177,49 @@ struct LinkAnalysisSingleResult : SingleAnalysisResult {
 };
 
 // stores a single result of a transformation update analysis
-struct TransformationUpdateAnalysisSingleResult : LinkAnalysisSingleResult {
+struct TransformationUpdateAnalysisSingleResult : SingleAnalysisResult {
 
     TransformationUpdateAnalysisSingleResult( unsigned int tms, qPair tf, double ratioLenT,
                                               double distanceNormalT, double distanceNormalPointR,
                                               double distanceNormalR,
                                               double avgLinkQuality, double avgDistanceToEntry)
-    : LinkAnalysisSingleResult(tms, tf, avgLinkQuality, ratioLenT, distanceNormalT, distanceNormalR, distanceNormalPointR)
+    : tms(tms)
+    , tf(tf)
+    , ratioLenT(ratioLenT)
+    , distanceNormalT(distanceNormalT)
+    , distanceNormalPointR(distanceNormalPointR)
+    , distanceNormalR(distanceNormalR)
+    , avgLinkQuality(avgLinkQuality)
     , avgDistanceToEntry(avgDistanceToEntry)
     {}
 
+    unsigned int tms;
+    qPair tf;
+    double ratioLenT;
+    double distanceNormalT;
+    double distanceNormalPointR;
+    double distanceNormalR;
+    double avgLinkQuality;
     double avgDistanceToEntry;
 
-    QString toCSVString() {
-        return LinkAnalysisSingleResult::toCSVString() + "," + QString::number(avgDistanceToEntry);
+    virtual QString toCSVString() override {
+        const QString c = ",";
+        return QString::number(tms)+c+QString::number(tf.first.scalar())+c+
+               QString::number(tf.first.x())+c+QString::number(tf.first.y())+c+
+               QString::number(tf.first.z())+c+QString::number(tf.second.scalar())+c+
+               QString::number(tf.second.x())+c+QString::number(tf.second.y())+c+
+               QString::number(tf.second.z())+c+QString::number(ratioLenT)+c+
+               QString::number(distanceNormalT)+c+QString::number(distanceNormalPointR)+c+
+               QString::number(distanceNormalR)+c+QString::number(avgLinkQuality)+c+
+               QString::number(avgDistanceToEntry);
     }
 };
 
 struct LinkUpdateAnalysis : Analysis {
 
-    LinkUpdateAnalysis(const QString &srcFrame, const QString &destFrame)
-    : srcFrame(srcFrame)
+    LinkUpdateAnalysis(const Timestamp &tsZero, const QString &srcFrame, const QString &destFrame)
+    : Analysis(tsZero)
+    , srcFrame(srcFrame)
     , destFrame(destFrame)
     {}
 
@@ -177,8 +233,8 @@ struct LinkUpdateAnalysis : Analysis {
 
 struct LinkUpdateFixAnalysis : LinkUpdateAnalysis {
 
-    LinkUpdateFixAnalysis(const QString &srcFrame, const QString &destFrame, const qPair &fixT)
-    : LinkUpdateAnalysis(srcFrame, destFrame)
+    LinkUpdateFixAnalysis(const Timestamp &tsZero, const QString &srcFrame, const QString &destFrame, const qPair &fixT)
+    : LinkUpdateAnalysis(tsZero, srcFrame, destFrame)
     , fixT(fixT)
     {}
 
@@ -190,8 +246,9 @@ struct LinkUpdateFixAnalysis : LinkUpdateAnalysis {
 
 struct TransformationUpdateAnalysis : Analysis {
 
-    TransformationUpdateAnalysis(const QString &transID)
-    : transID(transID)
+    TransformationUpdateAnalysis(const Timestamp &tsZero, const QString &transID)
+    : Analysis(tsZero)
+    , transID(transID)
     {}
 
     void doAnalysis(std::list<TransformationUpdate> &input);
@@ -209,27 +266,8 @@ class MarkerModelMonitor : public QObject {
 
 public:
 
-    ~MarkerModelMonitor(){
+    void writeSingleAnalysisToFile(Analysis &analysis, const QString &path);
 
-        // do a link update analysis for all monitored link updates
-        auto iter = monitoredLinkUpdates.begin();
-        while(iter != monitoredLinkUpdates.end()){
-            std::string linkID = (*iter).first;
-            std::string srcFrame = (monitoredLinkIdentifier.at(linkID)).first;
-            std::string destFrame = (monitoredLinkIdentifier.at(linkID)).second;
-
-            LinkUpdateAnalysis lua = LinkUpdateAnalysis(QString::fromStdString(srcFrame), QString::fromStdString(destFrame));
-            lua.doAnalysis(monitoredLinkUpdates.at(linkID));
-            writeAnalysisToFile(lua, "../thymio-ar-demo/analysis/");
-            iter++;
-        }
-    }
-
-
-    void registerLinkUpdateToMonitor(const std::string &srcFrame, const std::string &destFrame);
-    void registerTransformationToMonitor(const std::string &transID);
-
-    void writeAnalysisToFile(Analysis &analysis, const QString &path);
 
 
 public slots:
@@ -238,6 +276,12 @@ public slots:
 
     void monitorTransformationUpdate(const std::string &transID, const Timestamp &ts, const QMatrix4x4 &trans,
                                      const float &avgLinkQuality, const float &avgDistanceToEntry);
+
+    void registerLinkUpdateToMonitor(const std::string &srcFrame, const std::string &destFrame);
+    void registerTransformationToMonitor(const std::string &transID);
+
+    void startMonitoring();
+    void stopMonitoring();
 
 protected:
     // container for the monitored link updates
@@ -249,6 +293,13 @@ protected:
 
     const unsigned int MAX_NUMBER_OF_MONITORED_UPDATES_PER_LINK = 1000000;
     const unsigned int MAX_NUMBER_OF_MONITORED_UPDATES_PER_TRANFORMATION = 1000000;
+
+    const QString PATH = "../thymio-ar-demo/analysis/";
+
+    Timestamp monitoringStartedAt;
+
+    bool currentlyMonitoring = false;
+
 };
 
 #endif // MARKERMODEL_H

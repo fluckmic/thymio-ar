@@ -7,20 +7,26 @@
 
 MarkerModel::MarkerModel(){
 
-    MarkerModelMonitor *monitor = new MarkerModelMonitor;
+    // necessary to allow connections to marker model monitor
+    qRegisterMetaType<Timestamp>(); qRegisterMetaType<qPair>(); qRegisterMetaType<std::string>();
+
+    // create a new monitor object
+    MarkerModelMonitor* monitor = new MarkerModelMonitor;
     monitor->moveToThread(&monitorThread);
 
-    connect(&monitorThread, &QThread::finished, monitor, &QObject::deleteLater);
+    //connect(&monitorThread, &QThread::finished, monitor, &QObject::deleteLater);
 
-    qRegisterMetaType<Timestamp>(); qRegisterMetaType<qPair>(); qRegisterMetaType<std::string>();
-    connect(this, &MarkerModel::transformationUpdate, monitor, &MarkerModelMonitor::monitorLinkUpdate);
+    connect(this, &MarkerModel::linkUpdate, monitor, &MarkerModelMonitor::monitorLinkUpdate);
+    connect(this, &MarkerModel::transformationUpdate, monitor, &MarkerModelMonitor::monitorTransformationUpdate);
 
-    // register which link you want to monitor
-    monitor->registerLinkUpdateToMonitor(camID, worldID);
-    monitor->registerLinkUpdateToMonitor(camID, orangeHouseID);
-    monitor->registerLinkUpdateToMonitor(camID, adaHouseID);
+    connect(this, &MarkerModel::startMonitor, monitor, &MarkerModelMonitor::startMonitoring);
+    connect(this, &MarkerModel::stopMonitor, monitor, &MarkerModelMonitor::stopMonitoring);
+
+    connect(this, &MarkerModel::registerLinkUpdateToMonitor, monitor, &MarkerModelMonitor::registerLinkUpdateToMonitor);
+    connect(this, &MarkerModel::registerTransformationToMonitor, monitor, &MarkerModelMonitor::registerTransformationToMonitor);
 
     monitorThread.start();
+
 }
 
 // main functions for the qml interface
@@ -33,7 +39,7 @@ void MarkerModel::updateLinkNow(const QString &srcFrame, const QString &destFram
     std::string srcF = srcFrame.toStdString(); std::string destF = destFrame.toStdString();
 
     // signal to monitor
-    emit transformationUpdate(srcF, destF, tsNow, qp, conf);
+    emit linkUpdate(srcF, destF, tsNow, qp, conf);
 
     //                                                ratioLenT   distanceNormalT     distanceNormalPointR    distanceNormalR
     QVector4D thresholdVectorEquality = QVector4D(    0.2,        0.2,                0.2,                    0.3);
@@ -74,10 +80,32 @@ void MarkerModel::updateModel(){
     world2adaHouseP = qPair2Matrix(qPair{world2adaHouseSART.qRot, world2adaHouseSART.qTra});
 
     // tell analyzer about new results
-    // fire signal to analyzer that transformations are updated
+    emit transformationUpdate(world2camID, tsNow, world2camP, world2camSART.avgLinkQuality, world2camSART.avgDistanceToEntry);
+    emit transformationUpdate(world2orangeHouseID, tsNow, world2orangeHouseP, world2orangeHouseSART.avgLinkQuality, world2orangeHouseSART.avgDistanceToEntry);
+    emit transformationUpdate(world2adaHouseID, tsNow, world2adaHouseP, world2adaHouseSART.avgLinkQuality, world2adaHouseSART.avgDistanceToEntry);
 
     // tell qml that new transformations are available
     emit transformationsUpdated();
+}
+
+// monitoring functions for the qml interface
+
+void MarkerModel::startMonitoring(){
+
+    // can add these also to the gui..
+    emit registerLinkUpdateToMonitor(camID, worldID);
+    emit registerLinkUpdateToMonitor(camID, orangeHouseID);
+    emit registerLinkUpdateToMonitor(camID, adaHouseID);
+
+    emit registerTransformationToMonitor(world2camID);
+    emit registerTransformationToMonitor(world2orangeHouseID);
+    emit registerTransformationToMonitor(world2adaHouseID);
+
+    emit startMonitor();
+}
+
+void MarkerModel::stopMonitoring(){
+    emit stopMonitor();
 }
 
 // helper functions for the qml interface
@@ -172,6 +200,7 @@ QQuaternion MarkerModel::avgQuaternions(const QQuaternion &q1, const QQuaternion
 // **************************************
 
 // functions for monitoring
+
 void MarkerModelMonitor::registerLinkUpdateToMonitor(const std::string &srcFrame, const std::string &destFrame){
 
     if(srcFrame == destFrame)
@@ -191,7 +220,10 @@ void MarkerModelMonitor::registerLinkUpdateToMonitor(const std::string &srcFrame
 void MarkerModelMonitor::monitorLinkUpdate(const std::string &srcFrame, const std::string &destFrame, const Timestamp &ts,
                                            const qPair &transf, const float &conf) {
 
-   // check if link update is monitored
+   if(!currentlyMonitoring)
+       return;
+
+    // check if link update is monitored
    if(srcFrame == destFrame)
        return;
 
@@ -216,8 +248,68 @@ void MarkerModelMonitor::registerTransformationToMonitor(const std::string &tran
     return;
 }
 
+void MarkerModelMonitor::startMonitoring() {
+
+        if(currentlyMonitoring)
+        return;         // we already monitor
+
+    monitoringStartedAt = std::chrono::high_resolution_clock::now();
+
+    currentlyMonitoring = true;
+}
+
+void MarkerModelMonitor::stopMonitoring() {
+
+    if(!currentlyMonitoring)
+        return;         // we aren't monitoring right now
+
+    QDateTime currentTime = QDateTime::currentDateTime();
+    QString folderPath = PATH + "Analysis_" + currentTime.toString("ddMMyy_HHmmss") + "/";
+
+    // create folder for analyis results
+    QDir dir;
+    int dirExists = dir.exists(folderPath);
+    // if not, create it
+    if( !dirExists )
+        dir.mkdir(folderPath);
+
+    // do a link update analysis for all monitored link updates
+    auto iter = monitoredLinkUpdates.begin();
+    while(iter != monitoredLinkUpdates.end()){
+        std::string linkID = (*iter).first;
+        std::string srcFrame = (monitoredLinkIdentifier.at(linkID)).first;
+        std::string destFrame = (monitoredLinkIdentifier.at(linkID)).second;
+
+        LinkUpdateAnalysis lua = LinkUpdateAnalysis(monitoringStartedAt, QString::fromStdString(srcFrame), QString::fromStdString(destFrame));
+        lua.doAnalysis(monitoredLinkUpdates.at(linkID));
+        writeSingleAnalysisToFile(lua, folderPath);
+        iter++;
+    }
+
+    // do a transformation update analysis for all monitored transformations
+    auto iter2 = monitoredTransformation.begin();
+    while(iter2 != monitoredTransformation.end()){
+        std::string transID = (*iter2).first;
+
+        TransformationUpdateAnalysis tua = TransformationUpdateAnalysis(monitoringStartedAt, QString::fromStdString(transID));
+        tua.doAnalysis((*iter2).second);
+        writeSingleAnalysisToFile(tua, folderPath);
+        iter2++;
+    }
+
+    // clean up all container for the next monitoring session
+    monitoredLinkIdentifier.clear();
+    monitoredLinkUpdates.clear();
+    monitoredTransformation.clear();
+
+    currentlyMonitoring = false;
+}
+
 void MarkerModelMonitor::monitorTransformationUpdate(const std::string &transID, const Timestamp &ts, const QMatrix4x4 &trans,
                                                      const float &avgLinkQuality, const float &avgDistanceToEntry){
+
+    if(!currentlyMonitoring)
+        return;
 
     auto iter2monitoredTransformations = monitoredTransformation.find(transID);
     if(iter2monitoredTransformations == monitoredTransformation.end())
@@ -240,8 +332,6 @@ void LinkUpdateAnalysis::doAnalysis(std::list<LinkUpdate> &input){
     // sort list
     auto comperator = ([](const LinkUpdate &lu1, const LinkUpdate &lu2) { return lu1.time > lu2.time;});
     input.sort(comperator);
-
-    Timestamp tZero = input.back().time;
 
     auto iter = input.begin();
     LinkUpdate preLu = (*iter), curLu;
@@ -271,8 +361,6 @@ void LinkUpdateFixAnalysis::doAnalysis(std::list<LinkUpdate> &input){
     auto comperator = ([](const LinkUpdate &lu1, const LinkUpdate &lu2) { return lu1.time > lu2.time;});
     input.sort(comperator);
 
-    Timestamp tZero = input.back().time;
-
     for(LinkUpdate &l : input){
         QVector4D diff = MarkerModel::compareqPair(l.transformation, fixT);
         results.push_front(
@@ -299,13 +387,11 @@ void TransformationUpdateAnalysis::doAnalysis(std::list<TransformationUpdate> &i
     auto comperator = ([](const TransformationUpdate &lu1, const TransformationUpdate &lu2) { return lu1.time > lu2.time;});
     input.sort(comperator);
 
-    Timestamp tZero = input.back().time;
-
     auto iter = input.begin();
     TransformationUpdate preTu = (*iter), curTu;
     iter++;
     while(iter != input.end()){
-        preTu = (*iter);
+        curTu = (*iter);
         QVector4D diff = MarkerModel::compareqPair(preTu.transformation, curTu.transformation);
         results.push_front(
               TransformationUpdateAnalysisSingleResult{
@@ -325,27 +411,21 @@ void TransformationUpdateAnalysis::doAnalysis(std::list<TransformationUpdate> &i
 
 }
 
-
 // helper functions
 
-void MarkerModelMonitor::writeAnalysisToFile(Analysis &analysis, const QString &path){
-
-    //TODO: rework!
+void MarkerModelMonitor::writeSingleAnalysisToFile(Analysis &analysis, const QString &path){
 
     const QString dSep = ",", newLine = "\n";
     QString suffixFilename = ""; QString prefixData = "";
-
-    QDateTime currentTime = QDateTime::currentDateTime();
 
     // generate appropriate path and prefix
     if(typeid(analysis) == typeid(LinkUpdateFixAnalysis)){
 
         LinkUpdateFixAnalysis a = dynamic_cast<LinkUpdateFixAnalysis&>(analysis);
 
-        suffixFilename += "Link_Update_Fix_Analysis_" + a.srcFrame + "_" + a.destFrame + "_";
+        suffixFilename += "Link_Update_Fix_Analysis_" + a.srcFrame + "_" + a.destFrame;
 
-        prefixData += currentTime.toString("dd,MM,yy,HH,mm,ss") + newLine
-                   +  "Link Update Fix Analysis" + dSep + a.srcFrame + dSep + a.destFrame + newLine
+        prefixData += "Link Update Fix Analysis" + dSep + a.srcFrame + dSep + a.destFrame + newLine
                    +  QString::number(a.fixT.first.scalar()) + dSep + QString::number(a.fixT.first.x()) + dSep
                    +  QString::number(a.fixT.first.y()) + dSep + QString::number(a.fixT.first.z()) + dSep
                    +  QString::number(a.fixT.second.scalar()) + dSep + QString::number(a.fixT.second.x()) + dSep
@@ -356,19 +436,25 @@ void MarkerModelMonitor::writeAnalysisToFile(Analysis &analysis, const QString &
 
         LinkUpdateAnalysis a = dynamic_cast<LinkUpdateAnalysis&>(analysis);
 
-        suffixFilename += "Link_Update_Analysis_" + a.srcFrame + "_" + a.destFrame + "_";
+        suffixFilename += "Link_Update_Analysis_" + a.srcFrame + "_" + a.destFrame;
 
-        prefixData += currentTime.toString("dd,MM,yy,HH,mm,ss") + newLine
-                   +  "Link Update Analysis" + dSep + a.srcFrame + dSep + a.destFrame + newLine;
+        prefixData += "Link Update Analysis" + dSep + a.srcFrame + dSep + a.destFrame + newLine;
 
     }
-    else if(typeid(analysis) == typeid(TransformationUpdateAnalysis)){}
+    else if(typeid(analysis) == typeid(TransformationUpdateAnalysis)){
+
+        TransformationUpdateAnalysis a = dynamic_cast<TransformationUpdateAnalysis&>(analysis);
+
+        suffixFilename += "Transformation_Update_Analysis_" + a.transID;
+
+        prefixData += "Transformation Update Analysis" + dSep + a.transID + newLine;
+    }
     else {
         // unknown analysis
         return;
     }
 
-    QFile file(path + suffixFilename +  currentTime.toString("ddMMyy_HHmmss") + ".m");
+    QFile file(path + suffixFilename + ".m");
     if(!file.open(QFile::WriteOnly | QFile::Text)){
         qDebug() << file.errorString();
         return;
