@@ -41,26 +41,21 @@ void MarkerModel::updateLinkNow(const QString &srcFrame, const QString &destFram
     // signal to monitor
     emit linkUpdate(srcF, destF, tsNow, qp, conf);
 
-    //                                                ratioLenT   distanceNormalT     distanceNormalPointR    distanceNormalR
-    QVector4D thresholdVectorEquality = QVector4D(    0.2,        0.2,                0.2,                    0.3);
-    double thresholdConfidence = 0.6;
-
     // compare transformation update with updated link
     StampedAndRatedTransformation lastUpdate;
     try {
         lastUpdate = getLink(srcF, destF, tsNow);
     } catch(NoSuchLinkFoundException e) { /* no update yet */ }
 
-    QVector4D diff = MarkerModel::compareqPair(qp, qPair{lastUpdate.qRot, lastUpdate.qTra});
-
-    bool equalT = diff.x() < thresholdVectorEquality.x() && diff.y() < thresholdVectorEquality.y() &&
-                  diff.z() < thresholdVectorEquality.z() && diff.w() < thresholdVectorEquality.w();
+    bool equalT = equalTransformation(qp, qPair{lastUpdate.qRot, lastUpdate.qTra});
     // if the two transformations are "equal" we update transmem with the average of the two
     if(equalT)
-        registerLink(srcF, destF, tsNow, avgQuaternions(lastUpdate.qRot, qp.first), avgQuaternions(lastUpdate.qTra, qp.second));
+        registerLink(srcF, destF, tsNow, avgAndNormalizeQuaternions(lastUpdate.qRot, qp.first), avgAndNormalizeQuaternions(lastUpdate.qTra, qp.second));
     // if the two transformations aren't "equal" but the confidence is "high enough" we update transmem with the new transformation
-    else if(conf >= thresholdConfidence)
-        registerLink(srcF, destF, tsNow, qp.first, qp.second);
+    else if(conf >= thConfidenceMarkerUpdate)
+        registerLink(srcF, destF, tsNow, qp.first, qp.second, conf);
+    else
+        updateLinkQuality(srcF, destF, conf);
 
 }
 
@@ -69,12 +64,15 @@ void MarkerModel::updateModel(){
     // preprocessing which is anyway necessary
     Timestamp tsNow = std::chrono::high_resolution_clock::now();
 
-    // STAGE 0
     /* SART == StampedAndRatedTransformation */
-    StampedAndRatedTransformation world2camSART = getLink(worldID, camID, tsNow),
-                                  world2orangeHouseSART = getLink(worldID, orangeHouseID, tsNow),
-                                  world2adaHouseSART = getLink(worldID, adaHouseID, tsNow);
+    StampedAndRatedTransformation world2camSARTNowWCM = getLink(worldID, camID, tsNow),
+                                  world2orangeHouseSARTNow = getLink(worldID, orangeHouseID, tsNow),
+                                  world2adaHouseSARTNow = getLink(worldID, adaHouseID, tsNow),
 
+                                  world2orangeHouseSARTFix = getBestLink(worldID, orangeHouseID),
+                                  world2adaHouseSARTFix = getBestLink(worldID, adaHouseID);
+
+    /*
     world2camP = qPair2Matrix(qPair{world2camSART.qRot, world2camSART.qTra});
     world2orangeHouseP = qPair2Matrix(qPair{world2orangeHouseSART.qRot, world2orangeHouseSART.qTra});
     world2adaHouseP = qPair2Matrix(qPair{world2adaHouseSART.qRot, world2adaHouseSART.qTra});
@@ -86,6 +84,7 @@ void MarkerModel::updateModel(){
 
     // tell qml that new transformations are available
     emit transformationsUpdated();
+    */
 }
 
 // monitoring functions for the qml interface
@@ -122,6 +121,17 @@ QMatrix4x4 MarkerModel::world2adaHouse(){
     return world2adaHouseP;
 }
 
+bool MarkerModel::world2camActive(){
+    return world2camActiveP;
+}
+
+bool MarkerModel::world2orangeHouseActive(){
+    return world2orangeHouseActiveP;
+}
+
+bool MarkerModel::world2adaHouseActive(){
+    return world2adaHouseActiveP;
+}
 // helper functions
 
 QMatrix4x4 MarkerModel::qPair2Matrix(const qPair &qp){
@@ -188,12 +198,26 @@ QVector4D MarkerModel::compareqPair(const qPair &qp1, const qPair &qp2){
     return QVector4D(   ratioLenT,     distanceNormalT,    distanceNormalPointR,   distanceNormalR);
 }
 
-QQuaternion MarkerModel::avgQuaternions(const QQuaternion &q1, const QQuaternion &q2){
-    return QQuaternion( (q1.scalar() + q2.scalar()) / 2.,
-                        (q1.x() + q2.x()) / 2.,
-                        (q1.y() + q2.y()) / 2.,
-                        (q1.z() + q2.z()) / 2.
-                       );
+QQuaternion MarkerModel::avgAndNormalizeQuaternions(const QQuaternion &q1, const QQuaternion &q2){
+    QQuaternion ret = QQuaternion( (q1.scalar() + q2.scalar()) / 2.,
+                                   (q1.x() + q2.x()) / 2.,
+                                   (q1.y() + q2.y()) / 2.,
+                                   (q1.z() + q2.z()) / 2.
+                                 );
+
+    return ret.normalized();
+}
+
+bool MarkerModel::equalTransformation(const qPair &qp1, const qPair &qp2){
+
+    //                                                       ratioLenT   distanceNormalT     distanceNormalPointR    distanceNormalR
+    const QVector4D thTransformationEquality = QVector4D(    0.2,        0.2,                0.2,                    0.3);
+
+    QVector4D diff = compareqPair(qp1, qp2);
+
+    return diff.x() < thTransformationEquality.x() && diff.y() < thTransformationEquality.y() &&
+           diff.z() < thTransformationEquality.z() && diff.w() < thTransformationEquality.w();
+
 }
 
 // functions for the marker model monitor
@@ -306,7 +330,7 @@ void MarkerModelMonitor::stopMonitoring() {
 }
 
 void MarkerModelMonitor::monitorTransformationUpdate(const std::string &transID, const Timestamp &ts, const QMatrix4x4 &trans,
-                                                     const float &avgLinkQuality, const float &avgDistanceToEntry){
+                                                     const float &avgLinkQuality, const float &maxDistanceToEntry){
 
     if(!currentlyMonitoring)
         return;
@@ -318,7 +342,7 @@ void MarkerModelMonitor::monitorTransformationUpdate(const std::string &transID,
     // add entry to the corresponding container
     std::list<TransformationUpdate> &refToTransf = ((*iter2monitoredTransformations).second);
     if(refToTransf.size() < MAX_NUMBER_OF_MONITORED_UPDATES_PER_TRANFORMATION)
-        refToTransf.push_back(TransformationUpdate{ts, MarkerModel::matrix2qPair(trans), avgLinkQuality, avgDistanceToEntry});
+        refToTransf.push_back(TransformationUpdate{ts, MarkerModel::matrix2qPair(trans), avgLinkQuality, maxDistanceToEntry});
 }
 
 // implementation of the different analysis
@@ -402,7 +426,7 @@ void TransformationUpdateAnalysis::doAnalysis(std::list<TransformationUpdate> &i
                     diff.z(),
                     diff.w(),
                     curTu.avgLinkQuality,
-                    curTu.avgDistanceToEntry
+                    curTu.maxDistanceToEntry
               }
        );
        preTu = curTu;

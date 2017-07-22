@@ -46,6 +46,11 @@ public:
     Q_PROPERTY(QMatrix4x4 world2orangeHouse READ world2orangeHouse NOTIFY transformationsUpdated)
     Q_PROPERTY(QMatrix4x4 world2adaHouse READ world2adaHouse NOTIFY transformationsUpdated)
 
+    Q_PROPERTY(bool world2camActive READ world2camActive NOTIFY transformationsUpdated)
+    Q_PROPERTY(bool world2adaHouseActive READ world2adaHouseActive NOTIFY transformationsUpdated)
+    Q_PROPERTY(bool world2orangeHouseActive READ world2orangeHouseActive NOTIFY transformationsUpdated)
+
+
     // function to update transmem
     Q_INVOKABLE void updateLinkNow(const QString& srcFrame, const QString& destFrame, const QMatrix4x4& trans, float conf);
     Q_INVOKABLE void updateModel();
@@ -59,6 +64,8 @@ public:
     static QMatrix4x4 qPair2Matrix(const qPair& qp);
     static QVector4D compareqPair(const qPair& qp1, const qPair& qp2);
     static qPair avgqPair(const qPair& qp1, const qPair& qp2);
+    static bool equalTransformation(const qPair &qp1, const qPair &qp2);
+
 
 private:
     // getter for the qml attributes
@@ -66,13 +73,26 @@ private:
     QMatrix4x4 world2orangeHouse();
     QMatrix4x4 world2adaHouse();
 
+    bool world2camActive();
+    bool world2orangeHouseActive();
+    bool world2adaHouseActive();
+
     // confidence mapping
     float f(const float& conf){ return conf > 1 ? 1 : conf < 0 ? 0 : conf; }
+
+    // empiric values of the model
+    const double thConfidenceMarkerActive = 0.4;
+    const double thConfidenceMarkerUpdate = 0.7;
+    const double thDistanceToLastUpdate = 50;       // in ms
 
     // private members
     QMatrix4x4 world2camP;
     QMatrix4x4 world2orangeHouseP;
     QMatrix4x4 world2adaHouseP;
+
+    bool world2camActiveP;
+    bool world2orangeHouseActiveP;
+    bool world2adaHouseActiveP;
 
     // private identifier
     // -> have to match identifier in qml!
@@ -105,7 +125,7 @@ signals:
     void transformationsUpdated();
 
 protected:
-    QQuaternion avgQuaternions(const QQuaternion &q1, const QQuaternion &q2);
+    QQuaternion avgAndNormalizeQuaternions(const QQuaternion &q1, const QQuaternion &q2);
 };
 
 // Container needed in marker model monitor to store monitored data
@@ -123,7 +143,7 @@ struct TransformationUpdate  {
     Timestamp time;
     qPair transformation;
     float avgLinkQuality;
-    float avgDistanceToEntry;
+    float maxDistanceToEntry;
 };
 
 // basic type of an analysis
@@ -275,7 +295,7 @@ public slots:
                            const qPair &transf, const float &conf);
 
     void monitorTransformationUpdate(const std::string &transID, const Timestamp &ts, const QMatrix4x4 &trans,
-                                     const float &avgLinkQuality, const float &avgDistanceToEntry);
+                                     const float &avgLinkQuality, const float &maxDistanceToEntry);
 
     void registerLinkUpdateToMonitor(const std::string &srcFrame, const std::string &destFrame);
     void registerTransformationToMonitor(const std::string &transID);
