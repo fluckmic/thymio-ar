@@ -63,11 +63,12 @@ public:
     static qPair matrix2qPair(const QMatrix4x4& m);
     static QMatrix4x4 qPair2Matrix(const qPair& qp);
     static QVector4D compareqPair(const qPair& qp1, const qPair& qp2);
-    static qPair avgqPair(const qPair& qp1, const qPair& qp2);
     static bool equalTransformation(const qPair &qp1, const qPair &qp2);
 
-
 private:
+
+    int NumbAverages = 0;
+
     // getter for the qml attributes
     QMatrix4x4 world2cam();
     QMatrix4x4 world2orangeHouse();
@@ -82,8 +83,8 @@ private:
 
     // empiric values of the model
     const double thConfidenceMarkerActive = 0.4;
-    const double thConfidenceMarkerUpdate = 0.7;
-    const double thDistanceToLastUpdate = 50;       // in ms
+    const double thConfidenceMarkerUpdate = 0.6;
+    const double thDistanceToLastUpdate = 70;       // in ms
 
     // private members
     QMatrix4x4 world2camP;
@@ -126,6 +127,7 @@ signals:
 
 protected:
     QQuaternion avgAndNormalizeQuaternions(const QQuaternion &q1, const QQuaternion &q2);
+    QQuaternion avgQuaternions(const QQuaternion &q1, const QQuaternion &q2);
 };
 
 // Container needed in marker model monitor to store monitored data

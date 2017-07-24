@@ -47,15 +47,12 @@ void MarkerModel::updateLinkNow(const QString &srcFrame, const QString &destFram
         lastUpdate = getLink(srcF, destF, tsNow);
     } catch(NoSuchLinkFoundException e) { /* no update yet */ }
 
-    bool equalT = equalTransformation(qp, qPair{lastUpdate.qRot, lastUpdate.qTra});
-    // if the two transformations are "equal" we update transmem with the average of the two
-    if(equalT)
-        registerLink(srcF, destF, tsNow, avgAndNormalizeQuaternions(lastUpdate.qRot, qp.first), avgAndNormalizeQuaternions(lastUpdate.qTra, qp.second));
-    // if the two transformations aren't "equal" but the confidence is "high enough" we update transmem with the new transformation
-    else if(conf >= thConfidenceMarkerUpdate)
+    if(conf >= thConfidenceMarkerUpdate)
         registerLink(srcF, destF, tsNow, qp.first, qp.second, conf);
     else
+        try {
         updateLinkQuality(srcF, destF, conf);
+    } catch(NoSuchLinkFoundException e) { /* no update yet */ }
 
 }
 
@@ -64,27 +61,146 @@ void MarkerModel::updateModel(){
     // preprocessing which is anyway necessary
     Timestamp tsNow = std::chrono::high_resolution_clock::now();
 
+    // helper lambda
+    // TODO: maybe not as lambda
     /* SART == StampedAndRatedTransformation */
-    StampedAndRatedTransformation world2camSARTNowWCM = getLink(worldID, camID, tsNow),
-                                  world2orangeHouseSARTNow = getLink(worldID, orangeHouseID, tsNow),
-                                  world2adaHouseSARTNow = getLink(worldID, adaHouseID, tsNow),
+    auto SARTMultiplier = [](const StampedAndRatedTransformation &lhs, const StampedAndRatedTransformation &rhs){
+        StampedAndRatedTransformation ret;
 
-                                  world2orangeHouseSARTFix = getBestLink(worldID, orangeHouseID),
-                                  world2adaHouseSARTFix = getBestLink(worldID, adaHouseID);
+        ret.time = lhs.time;
 
-    /*
-    world2camP = qPair2Matrix(qPair{world2camSART.qRot, world2camSART.qTra});
-    world2orangeHouseP = qPair2Matrix(qPair{world2orangeHouseSART.qRot, world2orangeHouseSART.qTra});
-    world2adaHouseP = qPair2Matrix(qPair{world2adaHouseSART.qRot, world2adaHouseSART.qTra});
+        ret.qRot = lhs.qRot * rhs.qRot;
+        ret.qTra = lhs.qRot * rhs.qTra * lhs.qRot.conjugated();
+        ret.qTra = ret.qTra + lhs.qTra;
+
+        ret.avgLinkQuality = lhs.avgLinkQuality > rhs.avgLinkQuality ? lhs.avgLinkQuality : rhs.avgLinkQuality;
+        ret.maxDistanceToEntry = lhs.maxDistanceToEntry > rhs.maxDistanceToEntry ? lhs.maxDistanceToEntry : rhs.maxDistanceToEntry;
+
+        return ret;
+    };
+
+    auto SARTAveragerIfEqual = [this](const StampedAndRatedTransformation &lhs, const StampedAndRatedTransformation &rhs){
+
+        bool encodeEqualTransformation = equalTransformation(qPair{lhs.qRot, lhs.qTra}, qPair{rhs.qRot, rhs.qTra});
+
+        if(!encodeEqualTransformation)
+            return lhs;
+
+
+        StampedAndRatedTransformation ret;
+
+        NumbAverages++;
+        qDebug() << "averaging.. " << NumbAverages;
+
+        ret.qRot = avgAndNormalizeQuaternions(lhs.qRot, rhs.qRot);
+        ret.qTra = avgQuaternions(lhs.qTra, rhs.qTra);
+        ret.avgLinkQuality = (lhs.avgLinkQuality + rhs.avgLinkQuality ) / 2;
+        ret.maxDistanceToEntry =    (lhs.maxDistanceToEntry + rhs.maxDistanceToEntry) / 2.;
+        ret.time = lhs.time;
+
+        return ret;
+    };
+
+    auto SARTInverter = [](StampedAndRatedTransformation &lhs){
+
+        lhs.qRot = lhs.qRot.inverted();
+        lhs.qTra = -(lhs.qRot*lhs.qTra*lhs.qRot.conjugated());
+
+        return lhs;
+    };
+
+    // **************************************************************************/
+    // MODEL 1
+    // **************************************************************************/
+
+    // fetch all transformations needed
+    StampedAndRatedTransformation world2camNowWCM, orangeHouse2camNow, adaHouse2camNow,
+                                  world2orangeHouseFix, world2adaHouseFix, world2adaHouseNow,
+                                  world2orangeHouseNow;
+
+    try{ world2camNowWCM = getLink(worldID, camID, tsNow); }
+    catch(NoSuchLinkFoundException){
+        // we require the world center to be present, otherwise no object
+        // is displayed
+        return;
+    }
+
+    try{ orangeHouse2camNow = getLink(orangeHouseID, camID, tsNow); }
+    catch(NoSuchLinkFoundException){ /* no link registered yet */ }
+
+    try{ adaHouse2camNow = getLink(adaHouseID, camID, tsNow); }
+    catch(NoSuchLinkFoundException){ /* no link registered yet */ }
+
+    try{ world2orangeHouseFix = getBestLink(worldID, orangeHouseID); }
+    catch(NoSuchLinkFoundException){ /* no link registered yet */ }
+
+    try{ world2adaHouseFix = getBestLink(worldID, adaHouseID); }
+    catch(NoSuchLinkFoundException){ /* no link registered yet */ }
+
+    try{ world2orangeHouseNow = getLink(worldID, orangeHouseID, tsNow); }
+    catch(NoSuchLinkFoundException){ /* no link registered yet */ }
+
+    try{ world2adaHouseNow = getLink(worldID, adaHouseID, tsNow); }
+    catch(NoSuchLinkFoundException){ /* no link registered yet */ }
+
+    StampedAndRatedTransformation world2camNowOHM = SARTMultiplier(orangeHouse2camNow, world2orangeHouseFix),
+                                  world2camNowAHM = SARTMultiplier(adaHouse2camNow, world2adaHouseFix);
+
+    StampedAndRatedTransformation world2orangeHouseBest = world2orangeHouseNow;
+    StampedAndRatedTransformation world2adaHouseBest = world2adaHouseNow;
+
+    // if the confidence for a link is to low, so we set the marker to inactive
+    world2camActiveP = !(world2camNowWCM.avgLinkQuality < thConfidenceMarkerActive);
+    world2orangeHouseActiveP = !(orangeHouse2camNow.avgLinkQuality < thConfidenceMarkerActive);
+    world2adaHouseActiveP = !(adaHouse2camNow.avgLinkQuality < thConfidenceMarkerActive);
+
+    // we sort the transformation from world to camera base depending on maxDistanceToEntry
+    // for a fix link, maxDistanceToEntry is the distance to the transformation entry on that link, where
+    // the entry is farthermost.
+    std::list<StampedAndRatedTransformation> trnsWorld2camNow = {world2camNowWCM, world2camNowOHM, world2camNowAHM};
+    auto cmp = [](const StampedAndRatedTransformation &lhs, const StampedAndRatedTransformation &rhs){ return lhs.maxDistanceToEntry < rhs.maxDistanceToEntry; };
+    trnsWorld2camNow.sort(cmp);
+
+    StampedAndRatedTransformation world2camBest = trnsWorld2camNow.front(); trnsWorld2camNow.pop_front();
+    StampedAndRatedTransformation world2cam2Best = trnsWorld2camNow.front(); trnsWorld2camNow.pop_front();
+    StampedAndRatedTransformation world2cam3Best = trnsWorld2camNow.front();
+
+    // if no transformation from world to camera base has a value maxDistanceToEntry which is smaller
+    // than the threshold, we cannot calculate a reasonable good transformation for world2cam, so even
+    // if the world center marker is partialy visible, we set it to inactive
+    if(world2camBest.maxDistanceToEntry > thDistanceToLastUpdate){
+        world2camActiveP = false;
+    }
+    // at least one transformation should be reasonable good, we check if there is another
+    // one which is also good enough, if yes we compare the transformation matrices and average
+    // them if they encode a similar transformation
+    else if(world2cam2Best.maxDistanceToEntry < thDistanceToLastUpdate &&
+            world2cam3Best.maxDistanceToEntry > thDistanceToLastUpdate){
+        world2camBest = SARTAveragerIfEqual(world2camBest, world2cam2Best);
+    }
+    // if there is even a third good transformation we also use this one
+    else if(world2cam3Best.maxDistanceToEntry < thDistanceToLastUpdate){
+        world2camBest = SARTAveragerIfEqual(world2camBest, world2cam2Best);
+        world2camBest = SARTAveragerIfEqual(world2camBest, world2cam3Best);
+    }
+
+    world2camP = qPair2Matrix(qPair{world2camBest.qRot, world2camBest.qTra});
+
+    world2orangeHouseP = qPair2Matrix(qPair{world2orangeHouseNow.qRot, world2orangeHouseNow.qTra});
+    world2adaHouseP = qPair2Matrix(qPair{world2adaHouseNow.qRot, world2adaHouseNow.qTra});
+
+    qDebug() << world2orangeHouseActiveP;
+
+    // **************************************************************************/
 
     // tell analyzer about new results
-    emit transformationUpdate(world2camID, tsNow, world2camP, world2camSART.avgLinkQuality, world2camSART.avgDistanceToEntry);
-    emit transformationUpdate(world2orangeHouseID, tsNow, world2orangeHouseP, world2orangeHouseSART.avgLinkQuality, world2orangeHouseSART.avgDistanceToEntry);
-    emit transformationUpdate(world2adaHouseID, tsNow, world2adaHouseP, world2adaHouseSART.avgLinkQuality, world2adaHouseSART.avgDistanceToEntry);
+      emit transformationUpdate(world2camID, tsNow, world2camP, world2camBest.avgLinkQuality, world2camBest.maxDistanceToEntry);
+      emit transformationUpdate(world2orangeHouseID, tsNow, world2orangeHouseP, world2orangeHouseBest.avgLinkQuality, world2orangeHouseBest.maxDistanceToEntry);
+      emit transformationUpdate(world2adaHouseID, tsNow, world2adaHouseP, world2adaHouseBest.avgLinkQuality, world2adaHouseBest.maxDistanceToEntry);
 
     // tell qml that new transformations are available
     emit transformationsUpdated();
-    */
+
 }
 
 // monitoring functions for the qml interface
@@ -208,10 +324,19 @@ QQuaternion MarkerModel::avgAndNormalizeQuaternions(const QQuaternion &q1, const
     return ret.normalized();
 }
 
+QQuaternion MarkerModel::avgQuaternions(const QQuaternion &q1, const QQuaternion &q2){
+    QQuaternion ret = QQuaternion( (q1.scalar() + q2.scalar()) / 2.,
+                                   (q1.x() + q2.x()) / 2.,
+                                   (q1.y() + q2.y()) / 2.,
+                                   (q1.z() + q2.z()) / 2.
+                                 );
+    return ret;
+}
+
 bool MarkerModel::equalTransformation(const qPair &qp1, const qPair &qp2){
 
     //                                                       ratioLenT   distanceNormalT     distanceNormalPointR    distanceNormalR
-    const QVector4D thTransformationEquality = QVector4D(    0.2,        0.2,                0.2,                    0.3);
+    const QVector4D thTransformationEquality = QVector4D(    0.002,      0.002,              0.002,                  0.002);
 
     QVector4D diff = compareqPair(qp1, qp2);
 
