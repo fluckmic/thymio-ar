@@ -161,7 +161,7 @@ struct TransformationUpdate  {
 // Stores a single result of an analysis.
 struct AnalysisSingleResult {
 
-    unsigned int tms;               // Elapsed time since analysis started in ms.
+    long tms;               // Elapsed time since analysis started in ms.
 
     qPair tf;                       // Transformation
 

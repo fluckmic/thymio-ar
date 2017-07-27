@@ -630,11 +630,11 @@ void MarkerModelMonitor::writeSingleAnalysisToFile(Analysis &analysis, const QSt
 
 void LinkUpdateAnalysis::doAnalysis(std::list<LinkUpdate> &input){
 
-    // we need at least two entries to do this analysis
+    // We need at least two entries to do this analysis
     if(input.size() < 2)
         return;
 
-    // sort list
+    // Sort all updates from ealierst to latest.
     auto comperator = ([](const LinkUpdate &lu1, const LinkUpdate &lu2) { return lu1.time > lu2.time;});
     input.sort(comperator);
 
@@ -643,6 +643,7 @@ void LinkUpdateAnalysis::doAnalysis(std::list<LinkUpdate> &input){
     iter++;
     while(iter != input.end()){
         curLu = (*iter);
+        // Compare transformation of current update against the transformation of previous update and store result.
         QVector4D diff = compareqPair(preLu.transformation, curLu.transformation);
         results.push_front(
                     AnalysisSingleResult{
@@ -667,11 +668,12 @@ void LinkUpdateAnalysis::doAnalysis(std::list<LinkUpdate> &input){
 
 void LinkUpdateFixAnalysis::doAnalysis(std::list<LinkUpdate> &input){
 
-    // sort list
+    // Sort all updates from ealierst to latest.
     auto comperator = ([](const LinkUpdate &lu1, const LinkUpdate &lu2) { return lu1.time > lu2.time;});
     input.sort(comperator);
 
     for(LinkUpdate &l : input){
+        // Compare transformation of current update against the fix transformation fixT and store result.
         QVector4D diff = compareqPair(l.transformation, fixT);
         results.push_front(
                     AnalysisSingleResult{
@@ -694,11 +696,11 @@ void LinkUpdateFixAnalysis::doAnalysis(std::list<LinkUpdate> &input){
 
 void TransformationUpdateAnalysis::doAnalysis(std::list<TransformationUpdate> &input) {
 
-    // we need at least two entries to do this analysis
+    // We need at least two entries to do this analysis.
     if(input.size() < 2)
         return;
 
-    // sort list
+    // Sort all transformation updates from ealierst to latest.
     auto comperator = ([](const TransformationUpdate &lu1, const TransformationUpdate &lu2) { return lu1.time > lu2.time;});
     input.sort(comperator);
 
@@ -707,6 +709,7 @@ void TransformationUpdateAnalysis::doAnalysis(std::list<TransformationUpdate> &i
     iter++;
     while(iter != input.end()){
         curTu = (*iter);
+        // Compare transformation of current update against the transformation of the previous update and store result.
         QVector4D diff = compareqPair(preTu.transformation, curTu.transformation);
         results.push_front(
                     AnalysisSingleResult{
@@ -723,6 +726,5 @@ void TransformationUpdateAnalysis::doAnalysis(std::list<TransformationUpdate> &i
        preTu = curTu;
        iter++;
     }
-
 }
 
