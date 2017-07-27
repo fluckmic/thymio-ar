@@ -240,7 +240,6 @@ static const std::vector<CalibrationExpect> calibrationExpects {
 
 struct Input {
 	QVector3D rotation;
-    qint64 timestamp;
 	cv::Mat image;
 };
 
