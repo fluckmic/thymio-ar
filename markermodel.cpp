@@ -4,11 +4,9 @@
  * HELPER FUNCTIONS         *
  ****************************/
 
-/*
-   REMARK:
-   Is it bad practice to define functions used by multiple classes and which not belong
-   to the class in a strong sense to one class outside without any class?
-*/
+/* REMARK:
+ * Is it bad practice to define functions used by multiple classes and which not belong
+ * to the class in a strong sense to one class outside without any class. */
 
 QMatrix4x4 qPair2Matrix(const qPair &qp){
 
@@ -152,7 +150,7 @@ void MarkerModel::updateLinkNow(const QString &srcFrame, const QString &destFram
     if(conf >= thConfidenceMarkerUpdate)
         registerLink(srcF, destF, tsNow, qp.first, qp.second, conf);
     else
-        try { updateLinkQuality(srcF, destF, conf); }
+        try { updateLinkConfidence(srcF, destF, conf); }
         catch(NoSuchLinkFoundException e) { /* Quality can just be updated if there was already a successful update. */ }
 }
 
@@ -162,17 +160,15 @@ void MarkerModel::updateModel(){
 
     // Helper lambda's
 
-    /*
-       REMARK:
-       It would also be possible to implement these functions as part of the StampedAndRatedTransformation
-       object or as proteced function of the MarkerModel class. But since the implementation strongly depends
-       on implentation the model it's more consistent to implement it here.
-    */
+    /* REMARK:
+     * It would also be possible to implement these functions as part of the StampedAndRatedTransformation
+     * object or as proteced function of the MarkerModel class. But since the implementation strongly depends
+     * on implentation the model it's more consistent to implement it here. */
 
-    /*
-       SART == StampedAndRatedTransformation
-       For more information about this type check out transmem.h.
-    */
+
+    // SART == StampedAndRatedTransformation
+    // For more information about this type check out transmem.h.
+
 
     // Multiplication of two SART objects.
     auto SARTMultiplier = [](const StampedAndRatedTransformation &lhs, const StampedAndRatedTransformation &rhs){
@@ -221,32 +217,26 @@ void MarkerModel::updateModel(){
     // ***************************************/
     // Start of model specific implementation.
 
-    /*
-       For the current implementation of the model the following assumptions are made:
+    /* For the current implementation of the model the following assumptions are made:
+     *
+     * > The position of the marker relative to eachother is fix.
+     * > The marker encoding the world center (world center marker) has to been seen once,
+     *   other markers are not recognized before.
+     * > If a marker is "hidden", its corresponding object is not displayed. This corresponds to
+     *   the human perception of the real world - a hidden object cannot be seen. */
 
-       > The position of the marker relative to eachother is fix.
-       > The marker encoding the world center (world center marker) has to been seen once,
-         other markers are not recognized before.
-       > If a marker is "hidden", its corresponding object is not displayed. This corresponds to
-        the human perception of the real world - a hidden object cannot be seen.
-    */
-
-    /*
-       GENERAL REMARK:
-       The three markers are hardcoded into the model at the moment. In a later stage it
-       may make sense to allow a more dynamic implementation of the model with any number
-       of tracker.
-    */
+    /* GENERAL REMARK:
+     * The three markers are hardcoded into the model at the moment. In a later stage it
+     * may make sense to allow a more dynamic implementation of the model with any number
+     * of tracker. */
 
     // Transformation needed for the model
     StampedAndRatedTransformation world2camNowWCM, orangeHouse2camNow, adaHouse2camNow,
                                   world2orangeHouseFix, world2adaHouseFix,
                                   world2adaHouseNow, world2orangeHouseNow;
 
-    /*
-       REMARK:
-       Handling control flow with exceptions. Is this bad practice?
-    */
+    /* REMARK:
+     * Handling control flow with exceptions. Is this bad practice? */
 
     // Fetching the transformations needed for the calculation of the model.
     try{ world2camNowWCM = getLink(worldID, camID, tsNow); }
@@ -272,22 +262,18 @@ void MarkerModel::updateModel(){
     StampedAndRatedTransformation world2camNowOHM = SARTMultiplier(orangeHouse2camNow, world2orangeHouseFix),
                                   world2camNowAHM = SARTMultiplier(adaHouse2camNow, world2adaHouseFix);
 
-    /*
-       If the confidence for a marker is to low, that is smaller than thConfidenceMarkerVisible.,
-       we set the transformation to inactive so that the corresponding object is not displayed.
-
-       If the confidence for a marker is greater than the threshold the marker is somehow visible.
-       If the corresponding object for the marker will be displayed is decided in a later stage.
-    */
+    /* If the confidence for a marker is to low, that is smaller than thConfidenceMarkerVisible.,
+     * we set the transformation to inactive so that the corresponding object is not displayed.
+     *
+     * If the confidence for a marker is greater than the threshold the marker is somehow visible.
+     * If the corresponding object for the marker will be displayed is decided in a later stage. */
     world2camActiveP = !(world2camNowWCM.avgLinkConfidence < thConfidenceMarkerVisible);
     world2orangeHouseActiveP = !(orangeHouse2camNow.avgLinkConfidence < thConfidenceMarkerVisible);
     world2adaHouseActiveP = !(adaHouse2camNow.avgLinkConfidence < thConfidenceMarkerVisible);
 
-    /*
-       We sort the transformation from world to camera base depending on maxDistanceToEntry from smallest to greatest.
-       The smaller this value the better the link, since this link was updated most recently, and an update also means
-       the confidence for this link was over the threshold tfConfidenceMarkerUpdate.
-    */
+    /* We sort the transformation from world to camera base depending on maxDistanceToEntry from smallest to greatest.
+     * The smaller this value the better the link, since this link was updated most recently, and an update also means
+     * the confidence for this link was over the threshold tfConfidenceMarkerUpdate. */
     std::list<StampedAndRatedTransformation> trnsWorld2camNow = {world2camNowWCM, world2camNowOHM, world2camNowAHM};
     auto cmp = [](const StampedAndRatedTransformation &lhs, const StampedAndRatedTransformation &rhs){ return lhs.maxDistanceToEntry < rhs.maxDistanceToEntry; };
     trnsWorld2camNow.sort(cmp);
@@ -296,18 +282,14 @@ void MarkerModel::updateModel(){
     StampedAndRatedTransformation world2cam2Best = trnsWorld2camNow.front(); trnsWorld2camNow.pop_front();
     StampedAndRatedTransformation world2cam3Best = trnsWorld2camNow.front();
 
-    /*
-       If no transformation from world to camera is good enough, that is the smallest value of maxDistanceToEntry
-       for all three transformation is larger than the threshold thDistanceToLastUpdate, we set the world center
-       marker to inactive.
-    */
+    /* If no transformation from world to camera is good enough, that is the smallest value of maxDistanceToEntry
+     * for all three transformation is larger than the threshold thDistanceToLastUpdate, we set the world center
+     * marker to inactive. */
     if(world2camBest.maxDistanceToEntry > thDistanceToLastUpdate)
         world2camActiveP = false; 
-    /*
-       The second best transformation has a maxDistanceToEntry value which is
-       also smaller than the threshold. If the to best transformation encode "equal"
-       transformations we average them.
-    */
+    /* The second best transformation has a maxDistanceToEntry value which is
+     * also smaller than the threshold. If the to best transformation encode "equal"
+     * transformations we average them. */
     else if(world2cam2Best.maxDistanceToEntry < thDistanceToLastUpdate &&
             world2cam3Best.maxDistanceToEntry > thDistanceToLastUpdate)
         world2camBest = SARTAveragerIfEqual(world2camBest, world2cam2Best);
@@ -322,11 +304,9 @@ void MarkerModel::updateModel(){
     // We finally set the transformation for world to camera.
     world2camP = qPair2Matrix(qPair{world2camBest.qRot, world2camBest.qTra});
 
-    /*
-       Use the best transformation known from world to cam together with the current
-       transformation from the orange house marker to the cam to calculate this transformation
-       without having to query transmem again.
-    */
+    /* Use the best transformation known from world to cam together with the current
+     * transformation from the orange house marker to the cam to calculate this transformation
+     * without having to query transmem again. */
     world2orangeHouseNow = SARTMultiplier(SARTInverter(orangeHouse2camNow), world2camBest);
 
     StampedAndRatedTransformation world2orangeHouseBest, world2orangeHouse2Best;
@@ -341,11 +321,9 @@ void MarkerModel::updateModel(){
            world2orangeHouse2Best = world2orangeHouseNow;
     }
 
-    /*
-       If the best link from world 2 orange house is to bad, that is there exist no fix link which is good
-       enough or the the needed links were not updated a reasonable time ago, we set the orange house object
-       to inactive.
-    */
+    /* If the best link from world 2 orange house is to bad, that is there exist no fix link which is good
+     * enough or the the needed links were not updated a reasonable time ago, we set the orange house object
+     * to inactive. */
     if(world2orangeHouseBest.maxDistanceToEntry > thDistanceToLastUpdate)
         world2orangeHouseActiveP = false;
     // If both transformation are good enough, we compare and average them if they encode the "equal" transformation.
@@ -391,10 +369,8 @@ void MarkerModel::updateModel(){
 
 void MarkerModel::startMonitoring(){
 
-    /*
-       REMARK:
-       Could make the monitoring options choosable through the gui.
-    */
+    /* REMARK:
+     * Could make the monitoring options choosable through the gui. */
     emit registerLinkUpdateToMonitor(worldID, camID);
     emit registerLinkUpdateToMonitor(orangeHouseID, camID);
     emit registerLinkUpdateToMonitor(adaHouseID, camID);
@@ -521,12 +497,10 @@ void MarkerModelMonitor::stopMonitoring() {
     if( !dirExists )
         dir.mkdir(folderPath);
 
-    /*
-       REMARK:
-       At the moment all possible analyses are done and written to a file for all tracked link
-       and transformation updates as soon the monitoring is stopped. It would make sense to make the analyses
-       choosable through a gui.ation strongly depends in a later step.
-    */
+    /* REMARK:
+     * At the moment all possible analyses are done and written to a file for all tracked link
+     * and transformation updates as soon the monitoring is stopped. It would make sense to make the analyses
+     * choosable through a gui.ation strongly depends in a later step. */
     doAndWriteLinkUpdateAnalyses(folderPath);
 
     doAndWriteTransformationUpdateAnalyses(folderPath);

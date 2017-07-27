@@ -165,11 +165,9 @@ struct AnalysisSingleResult {
 
     qPair tf;                       // Transformation
 
-    /*
-       Values yield from the comparision of two transformation. For further
-       information check the function compareqPair(..) and the implementation of the corrensponding
-       analyses using this datatype to store their results.
-    */
+    /* Values yield from the comparision of two transformation. For further
+     * information check the function compareqPair(..) and the implementation of the corrensponding
+     * analyses using this datatype to store their results. */
     double ratioLenT;
     double distanceNormalT;
     double distanceNormalPointR;
@@ -202,13 +200,11 @@ struct Analysis{
  * LINK UPDATE ANALYSIS *
  ************************************************/
 
-/*
-   This analysis compares the for each link update, the transformation with the transformation
-   of the link update happened right before this update. The difference (ratioLenT, distanceNormalT,
-   distanceNormalPointR and distanceNormalR) for each link update is stored together with
-   additional information (time when the update happened, confidence of the update and the actual transformation)
-   in a AnalysisSingleResult instance.
-*/
+/* This analysis compares the for each link update, the transformation with the transformation
+ * of the link update happened right before this update. The difference (ratioLenT, distanceNormalT,
+ * distanceNormalPointR and distanceNormalR) for each link update is stored together with
+ * additional information (time when the update happened, confidence of the update and the actual transformation)
+ * in a AnalysisSingleResult instance. */
 
 struct LinkUpdateAnalysis : Analysis {
 
@@ -249,11 +245,9 @@ struct LinkUpdateFixAnalysis : LinkUpdateAnalysis {
  * TRANSFORMATION UPDATE ANALYSIS               *
  ************************************************/
 
-/*
-   This Analyis works like the LinkUpdateAnalysis with the exception that not the confidence
-   but the average confidence (avgLinkConfidence) of a links contributing to the transformation
-   and the maxDistToEntry as a quality measurement is stored in a AnalysisSingleResult instance.
-*/
+/* This Analyis works like the LinkUpdateAnalysis with the exception that not the confidence
+ * but the average confidence (avgLinkConfidence) of a links contributing to the transformation
+ * and the maxDistToEntry as a quality measurement is stored in a AnalysisSingleResult instance. */
 
 struct TransformationUpdateAnalysis : Analysis {
 
@@ -271,18 +265,16 @@ struct TransformationUpdateAnalysis : Analysis {
  * MARKER MODEL              *
  ****************************/
 
-/*
-   REMARK:
-   Allows to monitor the link and transformation updates and to
-   dump the raw data or the already analyzed of the monitoring to files.
-
-   Link update:    Transfromation between a source frame and a destination frame at a certain
-                   point together with a timestamp. We get this from the tracking algorithm.
-
-   Transformation update:   Calculated transformation from a source frame to a a destination frame
-                            together with the quality information (avgLinkConfidence, maxDiffToEntry).
-                            This is the output the model generates.
-*/
+/* REMARK:
+ * Allows to monitor the link and transformation updates and to
+ * dump the raw data or the already analyzed of the monitoring to files.
+ *
+ * Link update:    Transfromation between a source frame and a destination frame at a certain
+ *                 point together with a timestamp. We get this from the tracking algorithm.
+ *
+ * Transformation update:   Calculated transformation from a source frame to a a destination frame
+ *                          together with the quality information (avgLinkConfidence, maxDiffToEntry).
+ *                          This is the output the model generates. */
 
 class MarkerModelMonitor : public QObject{
 
