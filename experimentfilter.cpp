@@ -2,8 +2,12 @@
 
 class ExperimentFilterRunnable;
 
-// helper function
-static int getCvType(QVideoFrame::PixelFormat pixelFormat) {
+/*******************
+* HELPER FUNCTIONS *
+********************/
+
+int getCvType(QVideoFrame::PixelFormat pixelFormat) {
+
     switch(pixelFormat) {
     case QVideoFrame::Format_ARGB32:
         return CV_8UC4;
@@ -43,10 +47,26 @@ static int getCvType(QVideoFrame::PixelFormat pixelFormat) {
     }
 }
 
+/**************************************************
+ * EXPERIMENT FILTER / EXPERIMENT FILTER RUNNABLE *
+ **************************************************/
+
+/* REMARK:
+ * This naive implementation of a filter can be used as support during
+ * development and/or to do some experiments. At the moment the filter
+ * provides to functions which can be controled via the gui:
+ *
+ * > Adding a salty noise to the image very middle third of the
+ *   image. This is somehow a way to influence the confidence of the tracker placed
+ *   in this part of the image and can be used for simple experiments.
+ * > Setting one ore more quarter of the image to black. This is equal to hide
+ *   a marker. */
+
 ExperimentFilterRunnable::~ExperimentFilterRunnable(){}
 
 QVideoFrame ExperimentFilterRunnable::run(QVideoFrame *inputFrame, const QVideoSurfaceFormat &surfaceFormat, QVideoFilterRunnable::RunFlags flags){
 
+    // Get parameter of input frame.
     auto size(inputFrame->size());
     auto height(size.height());
     auto width(size.width());
@@ -61,19 +81,21 @@ QVideoFrame ExperimentFilterRunnable::run(QVideoFrame *inputFrame, const QVideoS
 
     auto inputMat(cv::Mat(height, width, inputType, bits, bytesPerLine));
 
-    // add salt and pepper to disturb confidence value of marker tracker
+    // Add salty noise in the middle third of the image.
     if(*(noiseMagnitude) > 0){
-        cv::Mat saltAndPepper = cv::Mat::zeros(height, width, inputType);
-        cv::randu(saltAndPepper, LOWER_NOISE_THRESHHOLD, UPPER_NOISE_THRESHHOLD);
 
-        cv::Mat black = saltAndPepper > UPPER_NOISE_THRESHHOLD - (*noiseMagnitude)*((UPPER_NOISE_THRESHHOLD-LOWER_NOISE_THRESHHOLD)/2);
-        cv::Mat white = saltAndPepper < LOWER_NOISE_THRESHHOLD + (*noiseMagnitude)*((UPPER_NOISE_THRESHHOLD-LOWER_NOISE_THRESHHOLD)/2);
+        auto thirdHeight = height/3; auto thirdWidth = width/3;
 
-        inputMat.setTo(255, white);
-        inputMat.setTo(0, black);
-        }
+        cv::Mat pepper = cv::Mat::zeros(thirdHeight, thirdWidth, inputType);
+        cv::randu(pepper, LOWER_NOISE_THRESHHOLD, UPPER_NOISE_THRESHHOLD);
 
-    // blacking out some parts of the image
+        cv::Mat black = pepper > UPPER_NOISE_THRESHHOLD - (*noiseMagnitude)*((UPPER_NOISE_THRESHHOLD-LOWER_NOISE_THRESHHOLD)/2);
+        cv::Rect middleThird = cv::Rect(thirdWidth, thirdHeight, thirdWidth, thirdHeight);
+
+        inputMat(middleThird).setTo(0, black);
+    }
+
+    // Blacking out one or more quarter of the image.
     cv::Mat blackOut = cv::Mat::zeros(height, width, inputType);
 
     auto halfHeight = height/2; auto halfWidth = width/2;
@@ -91,7 +113,6 @@ QVideoFrame ExperimentFilterRunnable::run(QVideoFrame *inputFrame, const QVideoS
     inputFrame->unmap();
 
     return *inputFrame;
-
 }
 
 

@@ -2,12 +2,14 @@
 #define EXPERIMENTFILTER_H
 
 #include <QVideoFilterRunnable>
-
+#include <QDebug>
 #include <opencv2/video.hpp>
 #include <opencv2/core.hpp>
 #include <QAbstractVideoFilter>
 
-#include "vision-video-filter.h"
+/**************************************************
+ * EXPERIMENT FILTER / EXPERIMENT FILTER RUNNABLE *
+ **************************************************/
 
 class ExperimentFilterRunnable : public QVideoFilterRunnable{
 
@@ -22,12 +24,12 @@ public:
     QVideoFrame run(QVideoFrame *inputFrame, const QVideoSurfaceFormat &surfaceFormat, RunFlags flags);
 
 protected:
-    // parameter for salt and pepper noise
+    // Parameter for the salty noise.
     float* noiseMagnitude;
     const int UPPER_NOISE_THRESHHOLD = 255;
     const int LOWER_NOISE_THRESHHOLD = 0;
 
-    // parameter for hiding
+    // Parameter for hiding.
     bool *hideFlags;
 };
 
@@ -42,9 +44,8 @@ public:
 
 protected:
     float noiseMagnitude = 0;
-    bool hideFlags[4] = {false, false, false, false};
+    //                  upper right    upper right     lower right     lower right
+    bool hideFlags[4] = {false,         false,          false,          false};
 };
-
-
 
 #endif // EXPERIMENTFILTER_H

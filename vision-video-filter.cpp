@@ -25,9 +25,6 @@
 const auto outputHeight(480);
 const auto NaN(std::numeric_limits<double>::quiet_NaN());
 
-
-
-
 template<typename T>
 class TripleBuffer {
 public:
@@ -89,9 +86,6 @@ void Runnable::run() {
 		emit ran();
 	}
 }
-
-
-
 
 static int getCvType(QVideoFrame::PixelFormat pixelFormat) {
 	switch(pixelFormat) {
@@ -633,6 +627,14 @@ void VisionVideoFilterRunnable::trackedLandmarks() {
 	auto reading(filter->sensor.reading());
 	if (reading != nullptr) {
 
+        /* REMARK:
+         * Correction of the transformation with help of the rotation sensor. This seems
+         * to work with the Shield Tablet. But one has to conduct some tests with other devices
+         * if this is also true for different tablet or if the correct functionality relies to
+         * device specific parameter.
+         *
+         * (I will do that if time permits). TODO: remove this comment. */
+
         auto qRotLastFrame = QQuaternion::fromEulerAngles(output.rotation);
         auto qRotCurrFrame = QQuaternion::fromEulerAngles(QVector3D(reading->x(), reading->y(), -reading->z()));
 
@@ -643,17 +645,8 @@ void VisionVideoFilterRunnable::trackedLandmarks() {
                                        0,  0, -1, 0,
                                        0,  0,  0, 1);
 
-        // old stuff
-        // auto rotation(QVector3D(reading->x(), reading->y(), reading->z()));
-        // auto diff(output.rotation - rotation);
-        // auto quaternion(QQuaternion::fromEulerAngles(diff));
-
-		for (auto landmark : filter->landmarks) {
-            landmark->result.pose = corr * QMatrix4x4(qRotLast2CurrFrame.toRotationMatrix()) * corr.inverted() * landmark->result.pose;
-
-            // old stuff
-            // rotateResult(landmark->result, quaternion);
-        }
+        for (auto landmark : filter->landmarks)
+            landmark->result.pose = corr * QMatrix4x4(qRotLast2CurrFrame.toRotationMatrix()) * corr.inverted() * landmark->result.pose; 
 	}
 
 	for (auto landmark : filter->landmarks) {

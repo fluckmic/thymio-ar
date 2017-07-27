@@ -1,8 +1,8 @@
 #include "markermodel.h"
 
-/****************************
- * HELPER FUNCTIONS         *
- ****************************/
+/********************
+ * HELPER FUNCTIONS *
+ ********************/
 
 /* REMARK:
  * Is it bad practice to define functions used by multiple classes and which not belong
@@ -105,9 +105,9 @@ bool equalTransformation(const qPair &qp1, const qPair &qp2){
            diff.z() < thTransformationEquality.z() && diff.w() < thTransformationEquality.w();
 }
 
-/****************************
- * MARKERMODEL              *
- ****************************/
+/***************
+ * MARKERMODEL *
+ ***************/
 
 // Constructor
 
@@ -412,9 +412,9 @@ bool MarkerModel::world2adaHouseActive(){
     return world2adaHouseActiveP;
 }
 
-/****************************
- * MARKERMODELMONITOR       *
- ****************************/
+/**********************
+ * MARKERMODELMONITOR *
+ **********************/
 
 // Functions for monitoring
 
@@ -598,9 +598,9 @@ void MarkerModelMonitor::writeSingleAnalysisToFile(Analysis &analysis, const QSt
     }
 }
 
-/****************************
- * LINK UPDATE ANALYSIS     *
- ****************************/
+/************************
+ * LINK UPDATE ANALYSIS *
+ ************************/
 
 void LinkUpdateAnalysis::doAnalysis(std::list<LinkUpdate> &input){
 
@@ -664,9 +664,9 @@ void LinkUpdateFixAnalysis::doAnalysis(std::list<LinkUpdate> &input){
     }
 }
 
-/**************************************
- * TRANSFORMATION UPDATE ANALYSIS     *
- **************************************/
+/**********************************
+ * TRANSFORMATION UPDATE ANALYSIS *
+ **********************************/
 
 void TransformationUpdateAnalysis::doAnalysis(std::list<TransformationUpdate> &input) {
 
