@@ -66,16 +66,12 @@ QT += quick multimedia sensors 3dcore 3drender
 CONFIG += c++11
 HEADERS += \
     $$PWD/thymio-ar.h \
-	$$PWD/vision-video-filter.h \
-    $$PWD/markermodel.h \
-    $$PWD/experimentfilter.h
+        $$PWD/vision-video-filter.h
 SOURCES += \
     $$ASEBA_SOURCES \
     $$TRACKER_SOURCES \
     $$PWD/thymio-ar.cpp \
-	$$PWD/vision-video-filter.cpp \
-    $$PWD/markermodel.cpp \
-    $$PWD/experimentfilter.cpp
+        $$PWD/vision-video-filter.cpp
 RESOURCES += $$PWD/thymio-ar.qrc
 DEPENDPATH += $$OPENCV_INCLUDE $$EIGEN_INCLUDE
 INCLUDEPATH += $$OPENCV_INCLUDE $$EIGEN_INCLUDE
