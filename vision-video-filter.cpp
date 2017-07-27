@@ -251,7 +251,6 @@ struct OutputRobot {
 
 struct OutputLandmarks {
 	QVector3D rotation = QVector3D(NaN, NaN, NaN);
-    qint64 timestamp;
     QList<TrackerResult> results;
 };
 
@@ -563,7 +562,6 @@ bool VisionVideoFilterRunnable::trackLandmarks() {
 
 	auto& output(outputLandmarks.writeBuffer());
 	output.rotation = input.rotation;
-    output.timestamp = input.timestamp;
 
 	output.results.clear();
 	output.results.reserve(detection.size());
