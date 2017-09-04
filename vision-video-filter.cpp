@@ -205,7 +205,7 @@ struct CalibrationExpect {
 			min = std::min(min, norm);
 			std::rotate(vertices.begin(), vertices.begin() + 1, vertices.end());
 		}
-        return min < 0.2;
+        return min < 0.05; //0.2
 	}
 private:
 	static QTransform squareToQuad(QPolygonF quad) {
@@ -622,7 +622,8 @@ void VisionVideoFilterRunnable::trackedLandmarks() {
 	}
 
 	auto reading(filter->sensor.reading());
-	if (reading != nullptr) {
+    //reading = nullptr;
+    if (reading != nullptr) {
 
         /* REMARK:
          * Correction of the transformation with help of the rotation sensor. This seems
