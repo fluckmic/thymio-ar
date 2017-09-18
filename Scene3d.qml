@@ -26,10 +26,11 @@ Item {
 						components: [
 							CameraLens {
 								projectionMatrix: lens
-							},
-							Transform {
-								matrix: camera
-							}
+                            },
+                            // property of the item!
+                            Transform {
+                                matrix: camera
+                            }
 						]
 					}
 				}
