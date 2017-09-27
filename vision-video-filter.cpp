@@ -622,29 +622,28 @@ void VisionVideoFilterRunnable::trackedLandmarks() {
 	}
 
 	auto reading(filter->sensor.reading());
-    //reading = nullptr;
     if (reading != nullptr) {
 
-        /* REMARK:
-         * Correction of the transformation with help of the rotation sensor. This seems
-         * to work with the Shield Tablet. But one has to conduct some tests with other devices
-         * if this is also true for different tablet or if the correct functionality relies to
-         * device specific parameter.
-         *
-         * (I will do that if time permits). TODO: remove this comment. */
+        /*
+        * Correction of the transformation with help of the rotation sensor. This works
+        * with the Shield Tablet. The matrix "internal", representing the mapping between
+        * the frame of the camera and the frame of the rotation sensor of the mentioned device
+        * was determined empirically. In a next step the dertermination of this mapping should
+        * be made independent of the device.
+        */
 
         auto qRotLastFrame = QQuaternion::fromEulerAngles(output.rotation);
         auto qRotCurrFrame = QQuaternion::fromEulerAngles(QVector3D(reading->x(), reading->y(), -reading->z()));
 
         auto qRotLast2CurrFrame = qRotCurrFrame * qRotLastFrame.inverted();
 
-        QMatrix4x4 corr = QMatrix4x4(  0, -1,  0, 0,
+        QMatrix4x4 internal = QMatrix4x4(  0, -1,  0, 0,
                                        1,  0,  0, 0,
                                        0,  0, -1, 0,
                                        0,  0,  0, 1);
 
         for (auto landmark : filter->landmarks)
-            landmark->result.pose = corr * QMatrix4x4(qRotLast2CurrFrame.toRotationMatrix()) * corr.inverted() * landmark->result.pose; 
+            landmark->result.pose = internal * QMatrix4x4(qRotLast2CurrFrame.toRotationMatrix()) * internal.inverted() * landmark->result.pose; 
 	}
 
 	for (auto landmark : filter->landmarks) {
